@@ -43,7 +43,8 @@ CLeapController::CLeapController()
 
 CLeapController::~CLeapController()
 {
-    for(auto l_button : m_buttons) delete l_button;
+    for(auto* l_button : m_buttons)
+        delete l_button;
 }
 
 // vr::ITrackedDeviceServerDriver
@@ -109,7 +110,7 @@ const std::string& CLeapController::GetSerialNumber() const
 
 void CLeapController::ResetControls()
 {
-    for(auto l_button : m_buttons)
+    for(auto* l_button : m_buttons)
     {
         l_button->SetValue(0.f);
         l_button->SetState(false);
@@ -134,7 +135,7 @@ void CLeapController::RunFrame(const LEAP_HAND *f_hand, const LEAP_HAND *f_oppHa
 
 void CLeapController::UpdateInput()
 {
-    for(auto l_button : m_buttons)
+    for(auto* l_button : m_buttons)
     {
         if(l_button->IsUpdated())
         {
@@ -182,35 +183,32 @@ void CLeapController::UpdateTransformation(const LEAP_HAND *f_hand)
                 l_rotation *= ((m_hand == CH_Left) ? g_rotateHalfPiZN : g_rotateHalfPiZ);
                 l_rotation *= ((m_hand == CH_Left) ? CDriverConfig::GetLeftHandOffsetRotation() : CDriverConfig::GetRightHandOffsetRotation());
 
-                // l_position here is valid palm position
-                // l_rotation here is valid palm rotation
+                //A Valve Index controller strapped to your knuckles sits upright. Apply a 90° offset to replicate this
+                l_rotation *= glm::quat(glm::vec3(glm::half_pi<float>(), 0, 0));
 
-                l_rotation *= glm::quat(glm::vec3(0.70106769f, 0, 0));
-            		
-                //glm::vec3 index_palmoffset(-0.025f, -0.015f, -0.12f);
-                glm::vec3 index_palmoffset(-0.03f, -0.015f, -0.12f);
-            	index_palmoffset.x *= m_hand == CH_Left ? -1.0f : 1.0f;
-                index_palmoffset = rotate(l_rotation, index_palmoffset);
+                //The origin of the render model of the index is way in front of the model.
+                //The pivot point sits approximately at (+/-3cm, 15cm, 12cm) relative to the center of your palm
+                const glm::vec3 index_palmOffset = glm::rotate(l_rotation,
+                    glm::vec3(-0.03f * (m_hand == CH_Left ? -1.f : 1.f), -0.015f, -0.12f));
 
-                l_position += index_palmoffset;
-            		
-                m_pose.vecPosition[0] = l_position.x;
-                m_pose.vecPosition[1] = l_position.y;
-                m_pose.vecPosition[2] = l_position.z;
-                m_pose.qRotation.x = l_rotation.x;
-                m_pose.qRotation.y = l_rotation.y;
-                m_pose.qRotation.z = l_rotation.z;
-                m_pose.qRotation.w = l_rotation.w;
+                l_position += index_palmOffset;
+
+                m_pose.vecPosition[0] = static_cast<double>(l_position.x);
+                m_pose.vecPosition[1] = static_cast<double>(l_position.y);
+                m_pose.vecPosition[2] = static_cast<double>(l_position.z);
+                m_pose.qRotation.x = static_cast<double>(l_rotation.x);
+                m_pose.qRotation.y = static_cast<double>(l_rotation.y);
+                m_pose.qRotation.z = static_cast<double>(l_rotation.z);
+                m_pose.qRotation.w = static_cast<double>(l_rotation.w);
 
                 if (CDriverConfig::IsVelocityUsed())
                 {
                     const LEAP_VECTOR l_palmVelocity = f_hand->palm.velocity;
-                    glm::vec3 l_resultVelocity(-0.001f * l_palmVelocity.x, -0.001f * l_palmVelocity.z, -0.001f * l_palmVelocity.y);
                     const glm::quat l_headRotation(ms_headRotation.w, ms_headRotation.x, ms_headRotation.y, ms_headRotation.z);
-                    l_resultVelocity = l_headRotation * l_resultVelocity;
-                    m_pose.vecVelocity[0] = l_resultVelocity.x;
-                    m_pose.vecVelocity[1] = l_resultVelocity.y;
-                    m_pose.vecVelocity[2] = l_resultVelocity.z;
+                    const glm::vec3 l_resultVelocity = -0.001f * glm::vec3(l_palmVelocity.x, l_palmVelocity.z, l_palmVelocity.y) * l_headRotation;
+                    m_pose.vecVelocity[0] = static_cast<double>(l_resultVelocity.x);
+                    m_pose.vecVelocity[1] = static_cast<double>(l_resultVelocity.y);
+                    m_pose.vecVelocity[2] = static_cast<double>(l_resultVelocity.z);
                 }
             } break;
             case CDriverConfig::OM_Desktop:
@@ -224,16 +222,16 @@ void CLeapController::UpdateTransformation(const LEAP_HAND *f_hand)
                 m_pose.vecWorldFromDriverTranslation[2U] += l_offset.z;
 
                 const glm::vec3 &l_handOffset = ((m_hand == CH_Left) ? CDriverConfig::GetLeftHandOffset() : CDriverConfig::GetRightHandOffset());
-                m_pose.vecPosition[0] = 0.001f*l_palmPosition.x + l_handOffset.x;
-                m_pose.vecPosition[1] = 0.001f*l_palmPosition.y + l_handOffset.y;
-                m_pose.vecPosition[2] = 0.001f*l_palmPosition.z + l_handOffset.z;
-
+                m_pose.vecPosition[0] = 0.001 * l_palmPosition.x + l_handOffset.x;
+                m_pose.vecPosition[1] = 0.001 * l_palmPosition.y + l_handOffset.y;
+                m_pose.vecPosition[2] = 0.001 * l_palmPosition.z + l_handOffset.z;
+            		
                 if(CDriverConfig::IsVelocityUsed())
                 {
                     const LEAP_VECTOR l_palmVelocity = f_hand->palm.velocity;
-                    m_pose.vecVelocity[0] = 0.001f*l_palmVelocity.x;
-                    m_pose.vecVelocity[1] = 0.001f*l_palmVelocity.y;
-                    m_pose.vecVelocity[2] = 0.001f*l_palmVelocity.z;
+                    m_pose.vecVelocity[0] = 0.001 * l_palmVelocity.x;
+                    m_pose.vecVelocity[1] = 0.001 * l_palmVelocity.y;
+                    m_pose.vecVelocity[2] = 0.001 * l_palmVelocity.z;
                 }
 
                 glm::quat l_rotation(l_palmOrientation.w, l_palmOrientation.x, l_palmOrientation.y, l_palmOrientation.z);
@@ -274,7 +272,7 @@ void CLeapController::UpdateInputInternal()
 
 void CLeapController::UpdateHMDCoordinates()
 {
-    vr::TrackedDevicePose_t l_hmdPose;
+    vr::TrackedDevicePose_t l_hmdPose{};
     vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0.f, &l_hmdPose, 1U); // HMD has device ID 0
     if(l_hmdPose.bPoseIsValid)
     {
@@ -287,6 +285,6 @@ void CLeapController::UpdateHMDCoordinates()
         ms_headRotation.z = l_headRot.z;
         ms_headRotation.w = l_headRot.w;
 
-        for(size_t i = 0U; i < 3U; i++) ms_headPosition[i] = l_hmdPose.mDeviceToAbsoluteTracking.m[i][3];
+        for (size_t i = 0U; i < 3U; i++) ms_headPosition[i] = static_cast<double>(l_hmdPose.mDeviceToAbsoluteTracking.m[i][3]);
     }
 }
